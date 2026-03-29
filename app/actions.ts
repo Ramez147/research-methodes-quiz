@@ -3,7 +3,7 @@ import { createClient } from "redis";
 import { cookies } from "next/headers";
 
 type VoteResults = Record<string, number>;
-const OPTIONS = ["Kaffee ☕", "Tee 🍵", "Mate 🧉"] as const;
+const OPTIONS = ["Loyalty Programm", "Kursplattform", "Stundendashboard"] as const;
 const VALID_OPTIONS = new Set<string>(OPTIONS);
 const VOTES_KEY = "votes";
 const USER_VOTES_KEY = "user_votes";

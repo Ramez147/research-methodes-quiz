@@ -2,22 +2,22 @@
 import { useState, useEffect } from 'react';
 import { selectOption, getResults, getRedisHealth } from './actions';
 
-const OPTIONS = ["Kaffee ☕", "Tee 🍵", "Mate 🧉"] as const;
+const OPTIONS = ["Loyalty Programm", "Kursplattform", "Stundendashboard"] as const;
 
 type VoteOption = (typeof OPTIONS)[number];
 type VoteResults = Record<VoteOption, number>;
 
 const EMPTY_RESULTS: VoteResults = {
-  "Kaffee ☕": 0,
-  "Tee 🍵": 0,
-  "Mate 🧉": 0,
+  "Loyalty Programm": 0,
+  "Kursplattform": 0,
+  "Stundendashboard": 0,
 };
 
 function normalizeResults(raw: Record<string, unknown> | null | undefined): VoteResults {
   return {
-    "Kaffee ☕": Number(raw?.["Kaffee ☕"] ?? 0),
-    "Tee 🍵": Number(raw?.["Tee 🍵"] ?? 0),
-    "Mate 🧉": Number(raw?.["Mate 🧉"] ?? 0),
+    "Loyalty Programm": Number(raw?.["Loyalty Programm"] ?? 0),
+    "Kursplattform": Number(raw?.["Kursplattform"] ?? 0),
+    "Stundendashboard": Number(raw?.["Stundendashboard"] ?? 0),
   };
 }
 
