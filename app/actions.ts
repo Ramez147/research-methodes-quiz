@@ -1,33 +1,44 @@
 "use server";
-import { Redis } from "@upstash/redis";
+import { createClient } from "redis";
 
 type VoteResults = Record<string, number>;
 
-function getRedisClient() {
-  const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
+type AppRedisClient = ReturnType<typeof createClient>;
 
-  if (!url || !token) {
+let redisClient: AppRedisClient | null = null;
+
+async function getRedisClient(): Promise<AppRedisClient> {
+  const url = process.env.REDIS_URL;
+
+  if (!url) {
     throw new Error(
-      "Redis ist nicht konfiguriert. Setze UPSTASH_REDIS_REST_URL und UPSTASH_REDIS_REST_TOKEN (oder KV_REST_API_URL und KV_REST_API_TOKEN)."
+      "Redis ist nicht konfiguriert. Setze REDIS_URL (z. B. redis://...)."
     );
   }
 
-  return new Redis({ url, token });
+  if (!redisClient) {
+    redisClient = createClient({ url });
+  }
+
+  if (!redisClient.isOpen) {
+    await redisClient.connect();
+  }
+
+  return redisClient;
 }
 
 export async function selectOption(option: string) {
-  const redis = getRedisClient();
+  const redis = await getRedisClient();
   // Erhöht den Zähler für die gewählte Option um 1
-  await redis.hincrby("votes", option, 1);
+  await redis.hIncrBy("votes", option, 1);
 }
 
 export async function getResults(): Promise<VoteResults> {
-  const redis = getRedisClient();
+  const redis = await getRedisClient();
   // Holt alle Stimmen aus der Datenbank
-  const results = await redis.hgetall<Record<string, unknown>>("votes");
+  const results = await redis.hGetAll("votes");
 
-  if (!results) {
+  if (!results || Object.keys(results).length === 0) {
     return {};
   }
 
