@@ -24,6 +24,30 @@ type AppRedisClient = ReturnType<typeof createClient>;
 
 let redisClient: AppRedisClient | null = null;
 
+function parseUserVotes(rawUserVotes: string | null): string[] {
+  if (!rawUserVotes) {
+    return [];
+  }
+
+  // Backward compatible: legacy value may still be a plain single option string.
+  if (VALID_OPTIONS.has(rawUserVotes)) {
+    return [rawUserVotes];
+  }
+
+  try {
+    const parsed = JSON.parse(rawUserVotes);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(
+      (entry): entry is string => typeof entry === "string" && VALID_OPTIONS.has(entry)
+    );
+  } catch {
+    return [];
+  }
+}
+
 function getRedisUrl(): string | null {
   return (
     process.env.REDIS_URL ??
@@ -113,28 +137,26 @@ export async function selectOption(option: string) {
   const redis = await getRedisClient();
   const voterId = await getOrCreateVoterId();
   const rawUserVotes = await redis.hGet(USER_VOTES_KEY, voterId);
-  let selectedOptions: string[] = [];
+  const selectedOptions = parseUserVotes(rawUserVotes);
+  const hasSelectedOption = selectedOptions.includes(option);
 
-  if (rawUserVotes) {
-    try {
-      const parsed = JSON.parse(rawUserVotes);
-      if (Array.isArray(parsed)) {
-        selectedOptions = parsed.filter((entry): entry is string => typeof entry === "string");
-      }
-    } catch {
-      selectedOptions = [];
-    }
-  }
+  const nextSelectedOptions = hasSelectedOption
+    ? selectedOptions.filter((entry) => entry !== option)
+    : [...selectedOptions, option];
 
-  if (selectedOptions.includes(option)) {
-    return;
-  }
-
-  selectedOptions.push(option);
   const tx = redis.multi();
-  tx.hIncrBy(VOTES_KEY, option, 1);
-  tx.hSet(USER_VOTES_KEY, voterId, JSON.stringify(selectedOptions));
+
+  // Toggle vote per option: add once, remove when unchecked.
+  tx.hIncrBy(VOTES_KEY, option, hasSelectedOption ? -1 : 1);
+  tx.hSet(USER_VOTES_KEY, voterId, JSON.stringify(nextSelectedOptions));
   await tx.exec();
+}
+
+export async function getUserSelections(): Promise<string[]> {
+  const redis = await getRedisClient();
+  const voterId = await getOrCreateVoterId();
+  const rawUserVotes = await redis.hGet(USER_VOTES_KEY, voterId);
+  return parseUserVotes(rawUserVotes);
 }
 
 export async function getResults(): Promise<VoteResults> {

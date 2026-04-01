@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from 'react';
-import { selectOption, getResults, getRedisHealth } from './actions';
+import { selectOption, getResults, getRedisHealth, getUserSelections } from './actions';
 
 const OPTIONS = [
   "OpenClaw: Einsatz im Mittelstand",
@@ -64,9 +64,9 @@ export default function Home() {
   useEffect(() => {
     let isActive = true;
 
-    // Health und Ergebnisse getrennt behandeln, damit ein Fehler nicht alles maskiert.
-    void Promise.allSettled([getResults(), getRedisHealth()])
-      .then(([resultsResponse, healthResponse]) => {
+    // Health, Ergebnisse und User-Auswahl getrennt behandeln, damit ein Fehler nicht alles maskiert.
+    void Promise.allSettled([getResults(), getRedisHealth(), getUserSelections()])
+      .then(([resultsResponse, healthResponse, selectionsResponse]) => {
         if (!isActive) {
           return;
         }
@@ -91,6 +91,13 @@ export default function Home() {
           // Redis ist erreichbar, aber das Laden der Ergebnisse ist trotzdem fehlgeschlagen.
           setError('Ergebnisse konnten nicht geladen werden.');
         }
+
+        if (selectionsResponse.status === 'fulfilled') {
+          const userSelections = selectionsResponse.value.filter((entry): entry is VoteOption =>
+            OPTIONS.includes(entry as VoteOption)
+          );
+          setSelected(userSelections);
+        }
       })
       .finally(() => {
         if (isActive) {
@@ -109,14 +116,21 @@ export default function Home() {
       return;
     }
 
-    setSelected((prev) => (prev.includes(option) ? prev : [...prev, option]));
+    const wasSelected = selected.includes(option);
+    setSelected((prev) =>
+      wasSelected ? prev.filter((entry) => entry !== option) : [...prev, option]
+    );
     setIsSubmitting(true);
     setError(null);
 
     try {
-      await selectOption(option); // In DB speichern
+      await selectOption(option); // In DB speichern (toggle)
       await loadResults(); // UI aktualisieren
     } catch {
+      // Optimistisches UI bei Fehler zurückrollen.
+      setSelected((prev) =>
+        wasSelected ? [...prev, option] : prev.filter((entry) => entry !== option)
+      );
       setError('Stimme konnte nicht gespeichert werden.');
     } finally {
       setIsSubmitting(false);
@@ -134,6 +148,11 @@ export default function Home() {
         </p>
       )}
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      <p className="mb-5 max-w-5xl text-sm text-gray-700 bg-white border border-gray-200 rounded-lg px-4 py-3">
+        {isRedisReady === false
+          ? 'Aktuell nicht möglich: Wählen oder Zurücknehmen (Redis nicht erreichbar).'
+          : 'Möglich: Thema ankreuzen = Stimme abgeben, Haken entfernen = Stimme zurücknehmen. Nicht möglich: mehrfach für dasselbe Thema stimmen.'}
+      </p>
       
       <div className="grid w-full max-w-5xl gap-3 mb-12 sm:grid-cols-2">
         {OPTIONS.map((opt) => (
@@ -145,11 +164,9 @@ export default function Home() {
               type="checkbox"
               className="mt-1 h-4 w-4 accent-blue-600"
               checked={selected.includes(opt)}
-              disabled={isInteractionBlocked || selected.includes(opt)}
-              onChange={(event) => {
-                if (event.target.checked) {
-                  void handleSelect(opt);
-                }
+              disabled={isInteractionBlocked}
+              onChange={() => {
+                void handleSelect(opt);
               }}
             />
             <span className="text-sm sm:text-base">{opt}</span>
