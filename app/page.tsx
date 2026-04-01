@@ -64,26 +64,32 @@ export default function Home() {
   useEffect(() => {
     let isActive = true;
 
-    // Fetch asynchron im Effect, um kein synchrones setState im Effect-Body zu triggern.
-    void Promise.all([getResults(), getRedisHealth()])
-      .then(([data, health]) => {
+    // Health und Ergebnisse getrennt behandeln, damit ein Fehler nicht alles maskiert.
+    void Promise.allSettled([getResults(), getRedisHealth()])
+      .then(([resultsResponse, healthResponse]) => {
         if (!isActive) {
           return;
         }
 
-        setResults(normalizeResults(data as Record<string, unknown>));
-        setIsRedisReady(health.ok);
-        setRedisStatus(health.message);
+        if (healthResponse.status === 'fulfilled') {
+          const health = healthResponse.value;
+          setIsRedisReady(health.ok);
+          setRedisStatus(health.message);
 
-        if (!health.ok) {
-          setError('Datenbankverbindung fehlt. Bitte Konfiguration prüfen.');
-        }
-      })
-      .catch(() => {
-        if (isActive) {
-          setError('Ergebnisse konnten nicht geladen werden.');
+          if (!health.ok) {
+            setError('Datenbankverbindung fehlt. Bitte Konfiguration prüfen.');
+          }
+        } else {
           setIsRedisReady(false);
           setRedisStatus('Redis-Status konnte nicht geprüft werden.');
+          setError('Datenbankverbindung konnte nicht geprüft werden.');
+        }
+
+        if (resultsResponse.status === 'fulfilled') {
+          setResults(normalizeResults(resultsResponse.value as Record<string, unknown>));
+        } else if (healthResponse.status === 'fulfilled' && healthResponse.value.ok) {
+          // Redis ist erreichbar, aber das Laden der Ergebnisse ist trotzdem fehlgeschlagen.
+          setError('Ergebnisse konnten nicht geladen werden.');
         }
       })
       .finally(() => {
