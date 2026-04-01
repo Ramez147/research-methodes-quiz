@@ -3,7 +3,18 @@ import { createClient } from "redis";
 import { cookies } from "next/headers";
 
 type VoteResults = Record<string, number>;
-const OPTIONS = ["Loyalty Programm", "Kursplattform", "Stundendashboard"] as const;
+const OPTIONS = [
+  "OpenClaw: Einsatz im Mittelstand",
+  "Agentic AI: Wenn Agenten zu Arbeitskräften werden",
+  "LLMs in der Softwareentwicklung",
+  "Prompt Engineering als Kompetenz",
+  "KI-Akzeptanz in Organisationen",
+  "Vibe Coding: Programmieren ohne Programmierkenntnisse",
+  "KI und Nachhaltigkeit: Der ökologische Fußabdruck",
+  "KI-generierte Inhalte in der Hochschullehre",
+  "Chatbot-Qualität im Kundenservice",
+  "KI-Transformation im regionalen Mittelstand",
+] as const;
 const VALID_OPTIONS = new Set<string>(OPTIONS);
 const VOTES_KEY = "votes";
 const USER_VOTES_KEY = "user_votes";
@@ -101,21 +112,28 @@ export async function selectOption(option: string) {
 
   const redis = await getRedisClient();
   const voterId = await getOrCreateVoterId();
-  const previousOption = await redis.hGet(USER_VOTES_KEY, voterId);
+  const rawUserVotes = await redis.hGet(USER_VOTES_KEY, voterId);
+  let selectedOptions: string[] = [];
 
-  if (previousOption === option) {
+  if (rawUserVotes) {
+    try {
+      const parsed = JSON.parse(rawUserVotes);
+      if (Array.isArray(parsed)) {
+        selectedOptions = parsed.filter((entry): entry is string => typeof entry === "string");
+      }
+    } catch {
+      selectedOptions = [];
+    }
+  }
+
+  if (selectedOptions.includes(option)) {
     return;
   }
 
+  selectedOptions.push(option);
   const tx = redis.multi();
-
-  // Eine Stimme pro User: alte Stimme entfernen, neue setzen.
-  if (previousOption && VALID_OPTIONS.has(previousOption)) {
-    tx.hIncrBy(VOTES_KEY, previousOption, -1);
-  }
-
   tx.hIncrBy(VOTES_KEY, option, 1);
-  tx.hSet(USER_VOTES_KEY, voterId, option);
+  tx.hSet(USER_VOTES_KEY, voterId, JSON.stringify(selectedOptions));
   await tx.exec();
 }
 
